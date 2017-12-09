@@ -15,4 +15,7 @@ VectorXd Tools::CalculateRMSE(const vector<VectorXd> &estimations,
   TODO:
     * Calculate the RMSE here.
   */
+
+  // EXACTLY THE SAME AS THE EKF
+  // LESSON 5, SECTION 7
 }
