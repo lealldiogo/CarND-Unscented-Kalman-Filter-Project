@@ -15,6 +15,9 @@ UKF::UKF() {
   ///* initially set to false, set to true in first call of ProcessMeasurement
   is_initialized_= false;
 
+  // previous timestamp
+  time_us_ = 0;
+
   // if this is false, laser measurements will be ignored (except during init)
   use_laser_ = true;
 
@@ -133,7 +136,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_(1) = meas_package.raw_measurements_[1];
     }
 
-    previous_timestamp_ = meas_package.timestamp_;
+    time_us_ = meas_package.timestamp_;
     // done initializing, no need to predict or update
     is_initialized_ = true;
     return;
@@ -151,8 +154,8 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
    */
 
   //compute the time elapsed between the current and previous measurements
-  float dt = (meas_package.timestamp_ - previous_timestamp_) / 1000000.0; //dt - expressed in seconds
-  previous_timestamp_ = meas_package.timestamp_;
+  float dt = (meas_package.timestamp_ - time_us_) / 1000000.0; //dt - expressed in seconds
+  time_us_ = meas_package.timestamp_;
 
   float dt_2 = dt * dt;
   float dt_3 = dt_2 * dt;
@@ -172,10 +175,10 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
    */
   if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
     // Radar updates
-    UpdateRadar(meas_package.raw_measurements_);
+    UpdateRadar(meas_package);
   } else {
     // Laser updates
-    UpdateLidar(meas_package.raw_measurements_);
+    UpdateLidar(meas_package);
   }
 
   // print the output
@@ -217,8 +220,8 @@ void UKF::Prediction(double delta_t) {
   //create augmented covariance matrix
   P_aug.fill(0.0);
   P_aug.topLeftCorner(n_x_,n_x_) = P_;
-  P_aug(n_x_,n_x_) = std_a*std_a;
-  P_aug(n_x_ + 1,n_x_ + 1) = std_yawdd*std_yawdd;
+  P_aug(n_x_,n_x_) = std_a_*std_a_;
+  P_aug(n_x_ + 1,n_x_ + 1) = std_yawdd_*std_yawdd_;
 
   //create square root matrix
   MatrixXd L = P_aug.llt().matrixL();
@@ -356,7 +359,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   //new state
   x_ = x_ + (K * y);
   MatrixXd I = MatrixXd::Identity(n_x_, n_x_);
-  P_ = (I - K * H_) * P_;
+  P_ = (I - K * H_laser_) * P_;
 }
 
 /**
@@ -377,6 +380,9 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   // PREDICT RADAR SIGMA POINTS
   // LESSON 7, SECTION 27: PREDICT RADAR MEASUREMENT ASSIGNMENT 2
+
+  //create matrix for sigma points in measurement space
+  MatrixXd Zsig = MatrixXd(n_z, 2 * n_aug_ + 1);
 
   //transform sigma points into measurement space
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
@@ -459,6 +465,6 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
 
   //update state mean and covariance matrix
-  x_ = x + K * z_diff;
-  P_ = P - K*S*K.transpose();
+  x_ = x_ + K * z_diff;
+  P_ = P_ - K*S*K.transpose();
 }
