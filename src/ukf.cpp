@@ -24,19 +24,15 @@ UKF::UKF() {
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
 
-  // initial state vector
-  x_ = VectorXd(5);
-  x_ << 1, 1, 5.199937, 0, 0; //this three last values are important to RMSE. I can peak at the data and set them to the same values found in the data set
-
   // initial covariance matrix
-  P_ = MatrixXd(5, 5);
+  P_ = MatrixXd::Identity(5, 5);
 
   // THIS...
   // Process noise standard deviation longitudinal acceleration in m/s^2
   std_a_ = 3;
   // AND THIS...
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = M_PI/2;
+  std_yawdd_ = M_PI/3;
   // I MIGHT NEED TO CHANGE!
 
 
@@ -72,14 +68,16 @@ UKF::UKF() {
   n_aug_ = 7;
 
   //define spreading parameter
-  double lambda_ = 3 - n_aug_;
+  double lambda_ = 6.9 - n_aug_;
 
   //create vector for weights
   weights_ = VectorXd(2*n_aug_+1);
+  weights_.fill(0.0);
 
   // set weights
   double weight_0 = lambda_/(lambda_+n_aug_);
   weights_(0) = weight_0;
+
   for (int i=1; i<2*n_aug_+1; i++) {  //2n+1 weights
     double weight = 0.5/(n_aug_+lambda_);
     weights_(i) = weight;
@@ -87,6 +85,7 @@ UKF::UKF() {
 
   //create matrix with predicted sigma points
   Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
+  Xsig_pred_.fill(0.0);
 }
 
 UKF::~UKF() {}
@@ -118,6 +117,9 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     */
     // first measurement
     cout << "UKF: " << endl;
+    // initial state vector
+    x_ = VectorXd(5);
+    x_ << 0.6, 0.6, 5.19994, 0.0, 0.0; //Set after checking first ground_truth values
 
     if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
       /**
@@ -157,11 +159,11 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   float dt = (meas_package.timestamp_ - time_us_) / 1000000.0; //dt - expressed in seconds
   time_us_ = meas_package.timestamp_;
 
-  float dt_2 = dt * dt;
-  float dt_3 = dt_2 * dt;
-  float dt_4 = dt_3 * dt;
-
   //predict
+  cout << "\nBefore prediction: \n"<< endl;
+
+  cout << "x_ = " << x_ << endl;
+  cout << "P_ = " << P_ << endl;
   Prediction(dt);
 
   /*****************************************************************************
@@ -173,17 +175,35 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
      * Use the sensor type to perform the update step.
      * Update the state and covariance matrices.
    */
-  if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+  if (meas_package.sensor_type_ == MeasurementPackage::RADAR) { //&& use_radar_) {
     // Radar updates
+    // cout << "\nAfter Prediction and before Radar update: \n"<< endl;
+
+    // cout << "x_ = " << x_ << endl;
+    // cout << "P_ = " << P_ << endl;
+
     UpdateRadar(meas_package);
-  } else {
+    // cout << "\nAfter Radar update: \n"<< endl;
+
+    // cout << "x_ = " << x_ << endl;
+    // cout << "P_ = " << P_ << endl;
+
+  } else { //if (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_) {
     // Laser updates
+    // cout << "\nAfter prediction and before Lidar update: \n"<< endl;
+
+    // cout << "x_ = " << x_ << endl;
+    // cout << "P_ = " << P_ << endl;
     UpdateLidar(meas_package);
+    // cout << "\nAfter Lidar update: \n"<< endl;
+
+    // cout << "x_ = " << x_ << endl;
+    // cout << "P_ = " << P_ << endl;
   }
 
   // print the output
-  cout << "x_ = " << x_ << endl;
-  cout << "P_ = " << P_ << endl;
+  // cout << "x_ = " << x_ << endl;
+  // cout << "P_ = " << P_ << endl;
 
 }
 
@@ -213,6 +233,7 @@ void UKF::Prediction(double delta_t) {
   MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
 
   //create augmented mean state
+  // x_aug.fill(0.0);
   x_aug.head(n_x_) = x_;
   x_aug(n_x_) = 0;
   x_aug(n_x_ + 1) = 0;
@@ -227,6 +248,7 @@ void UKF::Prediction(double delta_t) {
   MatrixXd L = P_aug.llt().matrixL();
 
   //create augmented sigma points
+  Xsig_aug.fill(0.0);
   Xsig_aug.col(0)  = x_aug;
   for (int i = 0; i< n_aug_; i++)
   {
@@ -253,7 +275,7 @@ void UKF::Prediction(double delta_t) {
     double px_p, py_p;
 
     //avoid division by zero
-    if (fabs(yawd) > 0.001) {
+    if (fabs(yawd) > 0.0001) {
         px_p = p_x + v/yawd * ( sin (yaw + yawd*delta_t) - sin(yaw));
         py_p = p_y + v/yawd * ( cos(yaw) - cos(yaw+yawd*delta_t) );
     }
@@ -293,20 +315,25 @@ void UKF::Prediction(double delta_t) {
 
   //predicted state mean
   x.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //iterate over sigma points
-    x = x+ weights_(i) * Xsig_pred_.col(i);
+  for (int i = 0; i < 2 * n_aug_ + 1; i++)
+  {  //iterate over sigma points
+    x = x + weights_(i) * Xsig_pred_.col(i);
   }
 
 
   //predicted state covariance matrix
   P.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //iterate over sigma points
+  for (int i = 0; i < 2 * n_aug_ + 1; i++)
+  {  //iterate over sigma points
 
     // state difference
     VectorXd x_diff = Xsig_pred_.col(i) - x;
     //angle normalization
+
+    // cout << "\nHello bug: \n" << x_diff << endl;
     while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
     while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
+    // cout << "\nx_diff normalized: \n" << x_diff << endl;
 
     P = P + weights_(i) * x_diff * x_diff.transpose() ;
   }
@@ -340,8 +367,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   VectorXd z = meas_package.raw_measurements_;
 
   // initializing matrices
-  MatrixXd R_laser_ = MatrixXd(2, 2);
-  MatrixXd H_laser_ = MatrixXd(2, 5);
+  MatrixXd R_laser_ = MatrixXd(n_z, n_z);
+  MatrixXd H_laser_ = MatrixXd(n_z, n_x_);
 
   //measurement covariance matrix - laser
   R_laser_ << std_laspx_*std_laspx_, 0,
@@ -358,6 +385,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   //new state
   x_ = x_ + (K * y);
+
   MatrixXd I = MatrixXd::Identity(n_x_, n_x_);
   P_ = (I - K * H_laser_) * P_;
 }
@@ -399,7 +427,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     // measurement model
     Zsig(0,i) = sqrt(p_x*p_x + p_y*p_y);                        //r
     Zsig(1,i) = atan2(p_y,p_x);                                 //phi
-    Zsig(2,i) = (p_x*v1 + p_y*v2 ) / sqrt(p_x*p_x + p_y*p_y);   //r_dot
+    if (fabs(Zsig(0,i)) > 0.0001) {
+      Zsig(2,i) = (p_x*v1 + p_y*v2 ) / sqrt(p_x*p_x + p_y*p_y); //r_dot
+    } else {
+      Zsig(2,i) = 0.0;                                            //r_dot
+    }
   }
 
   //mean predicted measurement
