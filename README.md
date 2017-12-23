@@ -1,92 +1,46 @@
-# Unscented Kalman Filter Project Starter Code
-Self-Driving Car Engineer Nanodegree Program
+# Unscented Kalman Filter Project
 
-In this project utilize an Unscented Kalman Filter to estimate the state of a moving object of interest with noisy lidar and radar measurements. Passing the project requires obtaining RMSE values that are lower that the tolerance outlined in the project rubric. 
+This project was developed as part of the Udacity Self-Driving Car Engineer Nanodegree Program. The goal was to develop an Unscented Kalman Filter that used Radar and Lidar measurements to predict a car position with a Root-mean-square Error values under 0.09, 0.10, 0.40 and 0.30 for x, y, vx and vy, respectively.
 
-This project involves the Term 2 Simulator which can be downloaded [here](https://github.com/udacity/self-driving-car-sim/releases)
+## Overview
 
-This repository includes two files that can be used to set up and intall [uWebSocketIO](https://github.com/uWebSockets/uWebSockets) for either Linux or Mac systems. For windows you can use either Docker, VMware, or even [Windows 10 Bash on Ubuntu](https://www.howtogeek.com/249966/how-to-install-and-use-the-linux-bash-shell-on-windows-10/) to install uWebSocketIO. Please see [this concept in the classroom](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/16cf4a78-4fc7-49e1-8621-3450ca938b77) for the required version and installation scripts.
+Kalman filters are algorithms that use noisy measurements to estimate the state of a moving object of interest by constantly predicting and updating it every time a new measurement is received. In this project two types of sensors were used (Lidar and Radar) to estimate a car position over time based on a constant turn rate and velocity magnitude(CTRV) motion model. To deal with the nonlinear process models and nonlinear measurement models we are going to use an Unscented Kalman Filter which takes representative points from a gaussian distribution to predict normally distributed states that approximate the real predicted distribution as close as possible.
 
-Once the install for uWebSocketIO is complete, the main program can be built and ran by doing the following from the project top directory.
+## Environment Setup
 
-1. mkdir build
-2. cd build
-3. cmake ..
-4. make
-5. ./UnscentedKF
+Instructions for setting up the environment can be found [here](setup.md). After compiling, run the executable and open the simulator on the EKF & UKF project to check it out.
 
-Tips for setting up your environment can be found [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
+## Implementation
 
-Note that the programs that need to be written to accomplish the project are src/ukf.cpp, src/ukf.h, tools.cpp, and tools.h
+I started the development by getting the code I had already written for the quizzes of the Unscented Kalman Filter Lesson. I combined each piece of code to put together the Prediction and Radar Update steps. For the Laser Update I just copied the Update function from the kalman_filter.cpp file I implemented for the [Extended Kalman Filter Project](https://github.com/lealldiogo/CarND-Extended-Kalman-Filter-Project/) since it the laser measurement function is linear. Also used the ProcessMeasurement function from the FusionEKF.cpp to create the process of predictions and updates.
 
-The program main.cpp has already been filled out, but feel free to modify it.
+After making sure all the variables were consistent throughout the process and everything was linked, I was able to compile the project and run the simulation. But after a few steps, the simulation froze as shown in the picture below.
 
-Here is the main protcol that main.cpp uses for uWebSocketIO in communicating with the simulator.
+![stuck](ukf_problem.png)
 
+By printing the values I was getting for the state and covariance matrix before and after each step of the process (Prediction, UpdateLaser, UpdateRadar) I identified that the program was freezing in the Prediction step. Digging even deeper I discovered that the program was struggling to normalize high values of `yaw` angle.
 
-INPUT: values provided by the simulator to the c++ program
+I tried to normalize the angle in other parts of the code, avoid division by zero when transforming the radar measurements and also tuned a bit the `std_a_` and `std_yawdd_` but nothing seemed to work. Imagining that the matrices could have been initialized with residual values, I tried filling all of them with zeros after definition, but that didn't help much either and the simulation was still freezing after only a few steps.
 
-["sensor_measurement"] => the measurment that the simulator observed (either lidar or radar)
+It was only after sometime looking in the forums and debugging that I realized that the reason the values of the `yaw`, `yaw_rate` and also some values of the covariance matrix were exploding was the weights. The lambda value that I chose resulted in very small weights.
 
+For that reason I changed lambda from `3 - n_aug_` to `6 - n_aug_` and managed to make the simulation run all the way to the end as shown in the picture below. The weights became big negative values which impacted the predicted mean state and covariance matrix and the values for `yaw` and `yaw_rate` stopped growing so much.
 
-OUTPUT: values provided by the c++ program to the simulator
+![solved](not_stuck_anymore.png)
 
-["estimate_x"] <= kalman filter estimated position x
-["estimate_y"] <= kalman filter estimated position y
-["rmse_x"]
-["rmse_y"]
-["rmse_vx"]
-["rmse_vy"]
+I was still not getting RMSE values sufficient to pass the rubric. To try to make them drop, I printed the ground truth values to initialize the state `x` with the first ground truth value. I initialized the covariance matrix as an identity matrix and played a bit with the `std_a_` and `std_yawdd` but that didn't seemed to affect the rmse values that much, so I decide to raise all the way up to `6.9 - n_aug_` keeping in mind that `n_aug_ = 7` and lambda couldn't be zero.
 
----
+### Final RMSE values
 
-## Other Important Dependencies
-* cmake >= 3.5
-  * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1 (Linux, Mac), 3.81 (Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools](https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
+After that tune, I was able to finish the simulation with the following values of RMSE:
 
-## Basic Build Instructions
+```
+RMSE X: 0.0744168
+RMSE Y: 0.0858268
+RMSE Vx: 0.205431
+RMSE Vy: 0.287774
+```
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./UnscentedKF` Previous versions use i/o from text files.  The current state uses i/o
-from the simulator.
+### Author
 
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html) as much as possible.
-
-## Generating Additional Data
-
-This is optional!
-
-If you'd like to generate your own radar and lidar data, see the
-[utilities repo](https://github.com/udacity/CarND-Mercedes-SF-Utilities) for
-Matlab scripts that can generate additional data.
-
-## Project Instructions and Rubric
-
-This information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/c3eb3583-17b2-4d83-abf7-d852ae1b9fff/concepts/f437b8b0-f2d8-43b0-9662-72ac4e4029c1)
-for instructions and the project rubric.
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-
+Diogo Loreto Leal, Self-Driving Car Engineer Nanodegree Student
